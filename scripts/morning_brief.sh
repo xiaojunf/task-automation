@@ -108,8 +108,32 @@ HEREDOC
 osascript "$TMP_AS" 2>/dev/null
 echo "Email sent."
 
-# 6. Clear Obsidian Inbox (keep the header, remove content)
-echo "Clearing Inbox..."
+# 6. Archive Inbox content with date stamp, then reset
+echo "Archiving Inbox..."
+OBSIDIAN_VAULT=$(dirname "$OBSIDIAN_INBOX")
+ARCHIVE_FILE="$OBSIDIAN_VAULT/Archive/$TODAY.md"
+
+# Extract content below the --- separator
+INBOX_TO_ARCHIVE=$(awk '/^---$/{found++; next} found>=1' "$OBSIDIAN_INBOX")
+
+if [ -n "$(echo "$INBOX_TO_ARCHIVE" | tr -d '[:space:]')" ]; then
+  cat > "$ARCHIVE_FILE" << HEREDOC
+# Inbox Archive - $TODAY
+> ✅ 已处理｜处理时间：$(date '+%Y-%m-%d %H:%M')
+
+---
+
+$INBOX_TO_ARCHIVE
+
+---
+> 本日简报见 Gmail：☀️ 今日简报 - $TODAY
+HEREDOC
+  echo "Archived to $ARCHIVE_FILE"
+else
+  echo "Inbox was empty, skipping archive."
+fi
+
+# Reset Inbox to template only
 cat > "$OBSIDIAN_INBOX" << 'HEREDOC'
 # Inbox
 
@@ -118,7 +142,7 @@ cat > "$OBSIDIAN_INBOX" << 'HEREDOC'
 ---
 
 HEREDOC
-echo "Inbox cleared."
+echo "Inbox reset."
 
 rm -f "$TMP_AS"
 echo "=== Morning Brief completed at $(date) ==="
