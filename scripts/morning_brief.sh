@@ -7,31 +7,19 @@ WEEKDAY=$(date '+%A')
 LOG_FILE="$SCRIPT_DIR/logs/morning_$TODAY.log"
 TODAY_TASKS_FILE="$SCRIPT_DIR/today_tasks.txt"
 TMP_AS="$SCRIPT_DIR/tmp_applescript.scpt"
+OBSIDIAN_INBOX="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Inbox/Inbox.md"
 
 mkdir -p "$SCRIPT_DIR/logs"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "=== Morning Brief started at $(date) ==="
 
-# 1. Read Apple Notes Inbox
-echo "Reading Apple Notes Inbox..."
-cat > "$TMP_AS" << 'HEREDOC'
-tell application "Notes"
-  set targetNote to missing value
-  repeat with n in every note of every folder of every account
-    if name of n is "Inbox" then
-      set targetNote to n
-      exit repeat
-    end if
-  end repeat
-  if targetNote is missing value then
-    return "EMPTY"
-  end if
-  return body of targetNote
-end tell
-HEREDOC
-INBOX_RAW=$(osascript "$TMP_AS" 2>/dev/null)
-INBOX_CONTENT=$(echo "$INBOX_RAW" | sed 's/<[^>]*>//g' | sed '/^[[:space:]]*$/d')
-if [ -z "$INBOX_CONTENT" ] || [ "$INBOX_CONTENT" = "EMPTY" ]; then
+# 1. Read Obsidian Inbox.md
+echo "Reading Obsidian Inbox..."
+if [ -f "$OBSIDIAN_INBOX" ]; then
+  # Skip the header section (everything before the first ---)
+  INBOX_CONTENT=$(awk '/^---$/{found++; next} found>=1' "$OBSIDIAN_INBOX" | sed '/^[[:space:]]*$/d')
+fi
+if [ -z "$INBOX_CONTENT" ]; then
   INBOX_CONTENT="(今天没有新的 inbox 内容)"
 fi
 echo "Inbox retrieved."
@@ -120,19 +108,16 @@ HEREDOC
 osascript "$TMP_AS" 2>/dev/null
 echo "Email sent."
 
-# 6. Clear Inbox note
+# 6. Clear Obsidian Inbox (keep the header, remove content)
 echo "Clearing Inbox..."
-cat > "$TMP_AS" << 'HEREDOC'
-tell application "Notes"
-  repeat with n in every note of every folder of every account
-    if name of n is "Inbox" then
-      set body of n to ""
-      exit repeat
-    end if
-  end repeat
-end tell
+cat > "$OBSIDIAN_INBOX" << 'HEREDOC'
+# Inbox
+
+往这里扔任何东西，不需要格式。代码、想法、任务都可以。
+
+---
+
 HEREDOC
-osascript "$TMP_AS" 2>/dev/null
 echo "Inbox cleared."
 
 rm -f "$TMP_AS"

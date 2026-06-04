@@ -6,6 +6,7 @@ TODAY=$(date '+%Y-%m-%d')
 LOG_FILE="$SCRIPT_DIR/logs/evening_$TODAY.log"
 TODAY_TASKS_FILE="$SCRIPT_DIR/today_tasks.txt"
 TMP_AS="$SCRIPT_DIR/tmp_applescript_eve.scpt"
+OBSIDIAN_INBOX="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Inbox/Inbox.md"
 
 mkdir -p "$SCRIPT_DIR/logs"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -42,18 +43,10 @@ HEREDOC
 CALENDAR_EVENTS=$(osascript "$TMP_AS" 2>/dev/null)
 
 # 3. Read any new Inbox content added during the day
-cat > "$TMP_AS" << 'HEREDOC'
-tell application "Notes"
-  repeat with n in every note of every folder of every account
-    if name of n is "Inbox" then
-      return body of n
-    end if
-  end repeat
-  return "EMPTY"
-end tell
-HEREDOC
-INBOX_RAW=$(osascript "$TMP_AS" 2>/dev/null)
-INBOX_CONTENT=$(echo "$INBOX_RAW" | sed 's/<[^>]*>//g' | sed '/^[[:space:]]*$/d')
+INBOX_CONTENT=""
+if [ -f "$OBSIDIAN_INBOX" ]; then
+  INBOX_CONTENT=$(awk '/^---$/{found++; next} found>=1' "$OBSIDIAN_INBOX" | sed '/^[[:space:]]*$/d')
+fi
 
 # 4. Generate recap with Claude
 echo "Generating recap..."

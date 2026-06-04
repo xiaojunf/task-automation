@@ -83,16 +83,22 @@ bash ~/scripts/daily-agent/morning_brief.sh
 
 ### Capture（随时）
 
-打开 Apple Notes → `Inbox` note，直接写，不需要任何格式：
+打开 Obsidian → `Inbox.md`，在 `---` 分隔线下面直接写，支持所有格式：
 
-```
+~~~markdown
 明天要给 Aaron 发邮件关于建房材料
+
 需要复习 DP 题目，感觉这块比较弱
-买牛奶
-周五前更新简历的 EMOS 项目部分
+
+这个命令很有用要记一下：
+```bash
+launchctl list | grep xiaojunf
 ```
 
-想法、任务、提醒全部混在一起没关系，Claude 会帮你分类。
+周五前更新简历的 EMOS 项目部分
+~~~
+
+想法、任务、代码片段全部混在一起没关系，Claude 会帮你分类。
 
 ### 每天早上
 
