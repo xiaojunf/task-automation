@@ -8,6 +8,7 @@ LOG_FILE="$SCRIPT_DIR/logs/morning_$TODAY.log"
 TODAY_TASKS_FILE="$SCRIPT_DIR/today_tasks.txt"
 TMP_AS="$SCRIPT_DIR/tmp_applescript.scpt"
 OBSIDIAN_INBOX="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Inbox/Inbox.md"
+OBSIDIAN_VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Inbox"
 
 mkdir -p "$SCRIPT_DIR/logs"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -86,7 +87,117 @@ $CALENDAR_EVENTS
 SUMMARY=$(/opt/homebrew/bin/claude -p "$CLAUDE_INPUT" 2>/dev/null)
 echo "Summary generated."
 
-# 4. Save for evening recap
+# 4. Classify Inbox content into Living Notes
+echo "Classifying into Living Notes..."
+CLASSIFY_INPUT="你是我的个人助理。今天是 $TODAY。
+
+以下是我的 Inbox 内容：
+$INBOX_CONTENT
+
+请把每一条内容分类到以下五个类别之一，并判断它是「task（需要做的事）」还是「note（思考/笔记）」：
+1. 建房决策
+2. 孩子教育
+3. 职业规划
+4. 财务投资
+5. 面试准备
+
+输出严格按照以下 JSON 格式，不要输出其他内容：
+{
+  \"建房决策\": { \"tasks\": [\"...\"], \"notes\": [\"...\"] },
+  \"孩子教育\": { \"tasks\": [\"...\"], \"notes\": [\"...\"] },
+  \"职业规划\": { \"tasks\": [\"...\"], \"notes\": [\"...\"] },
+  \"财务投资\": { \"tasks\": [\"...\"], \"notes\": [\"...\"] },
+  \"面试准备\": { \"tasks\": [\"...\"], \"notes\": [\"...\"] }
+}
+
+rules:
+- 如果某类别没有内容，tasks 和 notes 都用空数组 []
+- task 是明确需要执行的动作，note 是想法、分析、代码片段、学习内容
+- 代码片段属于 note，保留原始格式"
+
+CLASSIFIED=$(/opt/homebrew/bin/claude -p "$CLASSIFY_INPUT" 2>/dev/null)
+
+# Write classified output to temp file to avoid heredoc quoting issues
+CLASSIFY_TMP="$SCRIPT_DIR/classify_tmp.json"
+echo "$CLASSIFIED" > "$CLASSIFY_TMP"
+
+# Append to each Living Note using Python for JSON parsing
+python3 << PYEOF
+import json, os, re
+
+today = "$TODAY"
+vault = "$OBSIDIAN_VAULT"
+classify_tmp = "$CLASSIFY_TMP"
+
+with open(classify_tmp) as f:
+    classified_raw = f.read()
+
+# Extract JSON from response
+match = re.search(r'\{.*\}', classified_raw, re.DOTALL)
+if not match:
+    print("Could not parse classification JSON")
+    exit(0)
+
+try:
+    data = json.loads(match.group())
+except:
+    print("JSON parse error")
+    exit(0)
+
+category_files = {
+    "建房决策": os.path.join(vault, "建房决策/建房决策.md"),
+    "孩子教育": os.path.join(vault, "孩子教育/孩子教育.md"),
+    "职业规划": os.path.join(vault, "职业规划/职业规划.md"),
+    "财务投资": os.path.join(vault, "财务投资/财务投资.md"),
+    "面试准备": os.path.join(vault, "面试准备/面试准备.md"),
+}
+
+for category, filepath in category_files.items():
+    tasks = data.get(category, {}).get("tasks", [])
+    notes = data.get(category, {}).get("notes", [])
+    if not tasks and not notes:
+        continue
+    if not os.path.exists(filepath):
+        continue
+
+    lines = [f"\n### {today}"]
+    if tasks:
+        for t in tasks:
+            # Also append to Tasks section
+            lines.append(f"- 新增 task：{t}")
+    if notes:
+        for n in notes:
+            lines.append(f"- {n}")
+    lines.append("")
+
+    # Append to 思考日志 section
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    log_section = "## 🗒 思考日志"
+    if log_section in content:
+        content = content.replace(log_section, log_section + "\n" + "\n".join(lines))
+    else:
+        content += "\n" + "\n".join(lines)
+
+    # Also add tasks to Tasks section
+    if tasks:
+        tasks_section = "## 📋 Tasks"
+        task_lines = "\n".join([f"- [ ] {t}" for t in tasks])
+        if tasks_section in content:
+            content = content.replace(tasks_section, tasks_section + "\n" + task_lines)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    print(f"Updated: {category} ({len(tasks)} tasks, {len(notes)} notes)")
+
+PYEOF
+
+rm -f "$CLASSIFY_TMP"
+echo "Living Notes updated."
+
+# 5. Save for evening recap
 echo "$SUMMARY" > "$TODAY_TASKS_FILE"
 
 # 5. Send email via Apple Mail
@@ -110,7 +221,6 @@ echo "Email sent."
 
 # 6. Archive Inbox content with date stamp, then reset
 echo "Archiving Inbox..."
-OBSIDIAN_VAULT=$(dirname "$OBSIDIAN_INBOX")
 ARCHIVE_FILE="$OBSIDIAN_VAULT/Archive/$TODAY.md"
 
 # Extract content below the --- separator
